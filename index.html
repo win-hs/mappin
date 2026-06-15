@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mappin：線上照片地圖標記工具</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+<style>
+  :root { --bd:#d9d9d3; --bd2:#bcbcb4; --muted:#6b6b66; --hint:#9a9a93; --info:#185fa5; --infobg:#e6f1fb;
+          --warn:#854f0b; --warnbg:#faeeda; --danger:#a32d2d; --dangerbg:#fcebeb; --ok:#0f6e56; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,"Microsoft JhengHei",sans-serif; color:#2c2c2a; background:#f4f3ee; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 14px; border-bottom:1px solid var(--bd); background:#fff; }
+  header h1 { font-size:16px; font-weight:500; margin:0; }
+  .counter { font-size:12px; color:var(--muted); }
+  .counter b { font-weight:600; color:#2c2c2a; font-variant-numeric:tabular-nums; letter-spacing:1px; }
+  .wrap { display:grid; grid-template-columns:260px 1fr; gap:10px; padding:10px; }
+  .sidebar { display:flex; flex-direction:column; gap:10px; }
+  .drop { border:1.5px dashed var(--bd2); border-radius:8px; padding:14px 10px; text-align:center; background:#fff; cursor:pointer; }
+  .drop.drag { background:var(--infobg); border-color:var(--info); }
+  .drop .t { font-size:14px; margin-top:2px; }
+  .drop small { color:var(--hint); }
+  .selrow { display:flex; gap:6px; }
+  .selrow button { flex:1; padding:5px; font-size:12px; border:1px solid var(--bd2); border-radius:6px; background:#fff; cursor:pointer; }
+  .selrow button:hover { background:#f0efe9; }
+  .list { background:#fff; border:1px solid var(--bd); border-radius:8px; padding:6px; max-height:44vh; overflow:auto; }
+  .row { display:flex; align-items:center; gap:7px; padding:5px 4px; border-radius:6px; }
+  .row.nogps { background:var(--warnbg); }
+  .row.active { outline:2px solid var(--info); }
+  .row[draggable=true] { cursor:grab; }
+  .thumb { width:32px; height:32px; border-radius:4px; object-fit:cover; background:var(--infobg); flex:none; cursor:pointer; }
+  .row .name { flex:1; min-width:0; font-size:12px; cursor:pointer; }
+  .row .name b { font-weight:500; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row .name span { font-size:11px; color:var(--ok); display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row .name span.w { color:var(--warn); }
+  .x { cursor:pointer; color:var(--hint); border:none; background:none; font-size:16px; line-height:1; padding:2px; }
+  .x:hover { color:var(--danger); }
+  button.btn { width:100%; padding:9px; border:1px solid var(--bd2); border-radius:8px; background:#fff; cursor:pointer; font-size:13px; }
+  button.btn:hover { background:#f0efe9; }
+  button.btn.danger { color:var(--danger); border-color:#e0b4b4; }
+  button.btn:disabled { opacity:.5; cursor:default; }
+  #map { height:62vh; min-height:380px; border:1px solid var(--bd); border-radius:8px; }
+  .fit-btn { background:#fff; border:2px solid rgba(0,0,0,.2); border-radius:5px; padding:5px 9px; font-size:12px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,.25); }
+  .fit-btn:hover { background:#f0efe9; }
+  /* pin */
+  .pin { position:relative; width:54px; height:64px; }
+  .pin-img { position:absolute; top:0; left:3px; width:48px; height:48px; border-radius:8px; border:3px solid #fff; box-shadow:0 1px 5px rgba(0,0,0,.4); object-fit:cover; background:#fff; cursor:pointer; }
+  .pin-tip { position:absolute; top:45px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:7px solid transparent; border-right:7px solid transparent; border-top:13px solid #fff; filter:drop-shadow(0 2px 1px rgba(0,0,0,.3)); }
+  .pin.sel { transform:scale(1.8); transform-origin:27px 58px; }
+  .pin.sel .pin-img { box-shadow:0 0 0 3px #EFA01E, 0 3px 10px rgba(0,0,0,.45); }
+  /* lightbox */
+  .lb { position:fixed; inset:0; background:rgba(0,0,0,.86); display:flex; align-items:center; justify-content:center; z-index:9000; cursor:zoom-out; }
+  .lb.hidden { display:none; }
+  .lb img { display:block; max-width:92vw; max-height:90vh; }
+  .lb-hint { position:fixed; bottom:14px; left:0; right:0; text-align:center; color:#fff; font-size:13px; opacity:.85; }
+  /* edit panel */
+  .panel { grid-column:1 / -1; background:#fff; border:1px solid var(--bd); border-radius:10px; padding:12px; margin:0 10px 10px; }
+  .panel.hidden { display:none; }
+  .panel .head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .panel .head .left { display:flex; align-items:center; gap:10px; }
+  .panel .head span.lbl { font-size:13px; color:var(--muted); }
+  #dirtyFlag { font-size:12px; color:var(--danger); display:none; }
+  .pgrid { display:grid; grid-template-columns:170px 1fr 220px; gap:14px; align-items:start; }
+  .preview { width:100%; height:150px; border-radius:8px; background:var(--infobg); display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  .preview img { max-width:100%; max-height:100%; cursor:zoom-in; }
+  .pvhint { font-size:11px; color:var(--hint); text-align:center; margin:4px 0 0; }
+  .rotbtn { margin-top:4px; width:100%; padding:6px; font-size:12px; border:1px solid var(--bd2); border-radius:6px; background:#fff; cursor:pointer; }
+  .rotbtn:hover { background:#f0efe9; }
+  .fields { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .fld label { font-size:11px; color:var(--hint); display:block; margin-bottom:2px; }
+  .fld input { width:100%; padding:6px 8px; border:1px solid var(--bd2); border-radius:6px; font-size:12px; font-family:inherit; }
+  .fld input.changed { border-color:var(--danger); background:var(--dangerbg); }
+  .tags { display:flex; flex-wrap:wrap; gap:6px; grid-column:1/-1; }
+  .tag { font-size:11px; background:#f0efe9; border-radius:6px; padding:4px 8px; color:#444; }
+  .minimap { height:200px; border:1px solid var(--bd); border-radius:8px; }
+  .mmhint { font-size:11px; color:var(--hint); margin:4px 0 0; }
+  .savebtn { width:100%; margin-top:8px; padding:9px; border:1px solid var(--info); border-radius:6px; background:var(--infobg); color:var(--info); cursor:pointer; font-size:13px; }
+  .savebtn.dirty { background:var(--danger); border-color:var(--danger); color:#fff; }
+  .empty { color:var(--hint); font-size:12px; text-align:center; padding:14px; }
+  /* unsaved dialog */
+  .dlg { position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center; z-index:9999; }
+  .dlg.hidden { display:none; }
+  .dlg-box { background:#fff; border-radius:10px; padding:18px 20px; max-width:340px; }
+  .dlg-box p { margin:0 0 14px; font-size:14px; }
+  .dlg-btns { display:flex; gap:8px; }
+  .dlg-btns button { flex:1; padding:8px; border-radius:6px; font-size:13px; cursor:pointer; border:1px solid var(--bd2); background:#fff; }
+  #dlgSave { background:var(--info); border-color:var(--info); color:#fff; }
+  #dlgDiscard { color:var(--danger); border-color:#e0b4b4; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📍Mappin：線上照片地圖標記工具</h1>
+  <div class="counter">總造訪次數 <b id="visits">00000000</b></div>
+</header>
+
+<div class="wrap">
+  <div class="sidebar">
+    <label class="drop" id="drop">
+      <div style="font-size:22px">⬆</div>
+      <div class="t">照片上傳</div>
+      <small>支援格式 JPG / JPEG · 可複選</small>
+      <input type="file" id="file" accept="image/jpeg" multiple hidden>
+    </label>
+
+    <div class="selrow">
+      <button id="selAll">全選</button>
+      <button id="selNone">全取消</button>
+    </div>
+
+    <div class="list" id="list"><div class="empty">尚無照片</div></div>
+
+    <button class="btn" id="pack" disabled>📦 打包下載 (0)</button>
+    <button class="btn" id="csv" disabled>📄 匯出 CSV</button>
+    <button class="btn danger" id="removeSel" disabled>🗑 移除選擇照片</button>
+  </div>
+
+  <div id="map"></div>
+
+  <div class="panel hidden" id="panel">
+    <div class="head">
+      <div class="left">
+        <span class="lbl">✎ 編輯照片</span>
+        <span id="dirtyFlag">● 有未儲存變更</span>
+      </div>
+      <button class="x" id="closePanel">✕</button>
+    </div>
+    <div class="pgrid">
+      <div>
+        <div class="preview"><img id="pvImg" alt=""></div>
+        <p class="pvhint">🔍 點圖放大檢視</p>
+        <button class="rotbtn" id="rotate">↻ 旋轉 90°</button>
+      </div>
+      <div class="fields">
+        <div class="fld" style="grid-column:1/-1"><label>檔名</label><input id="fName"></div>
+        <div class="fld" style="grid-column:1/-1"><label>拍攝日期時間</label><input id="fDate" type="datetime-local" step="1"></div>
+        <div class="fld"><label>緯度</label><input id="fLat" type="number" step="any"></div>
+        <div class="fld"><label>經度</label><input id="fLng" type="number" step="any"></div>
+        <div class="fld"><label>海拔 (m)</label><input id="fAlt" type="number" step="any"></div>
+        <div></div>
+        <div class="tags" id="tags"></div>
+      </div>
+      <div>
+        <div class="minimap" id="minimap"></div>
+        <p class="mmhint">在小地圖上點一下即可修改座標，儲存後大地圖標記會同步移動。</p>
+        <button class="savebtn" id="save">儲存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="lb hidden" id="lightbox">
+  <img id="lbImg" alt="">
+  <div class="lb-hint">點任意處或按 Esc 關閉</div>
+</div>
+
+<div class="dlg hidden" id="dlg">
+  <div class="dlg-box">
+    <p>這張照片有未儲存的變更，要如何處理？</p>
+    <div class="dlg-btns">
+      <button id="dlgSave">儲存</button>
+      <button id="dlgDiscard">放棄變更</button>
+      <button id="dlgCancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+const photos = [];
+let uid = 0, dirty = false, selId = null, oriChanged = false, origVals = {};
+
+// ===== visit counter (total page views, fresh key, 8-digit) =====
+const COUNTER_URL = 'https://abacus.jasoncameron.dev/hit/mappin-awen-9/live-visits';
+(async () => {
+  try {
+    const r = await fetch(COUNTER_URL);
+    const j = await r.json();
+    document.getElementById('visits').textContent = String(Number(j.value)).padStart(8, '0');
+  } catch (_) { document.getElementById('visits').textContent = '—'; }
+})();
+
+// ===== map + base layers =====
+const map = L.map('map').setView([23.97, 120.97], 7);
+const baseOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
+const baseSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' });
+const baseTopo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: '© OpenTopoMap (CC-BY-SA)' });
+baseOSM.addTo(map);
+L.control.layers({ '標準地圖': baseOSM, '衛星空照': baseSat, '地形圖': baseTopo }).addTo(map);
+
+const cluster = L.markerClusterGroup({ maxClusterRadius: 45, showCoverageOnHover: false, spiderfyOnMaxZoom: true });
+map.addLayer(cluster);
+
+// click empty map → deselect current pin (and close editor; guard unsaved edits)
+map.on('click', async () => {
+  if (activePid() === null && selId === null) return;
+  if (dirty) {
+    const r = await confirmSave();
+    if (r === 'cancel') return;
+    if (r === 'save') doSave();
+  }
+  closePanel();
+});
+
+// fit-all-photos control
+const FitCtl = L.Control.extend({
+  onAdd() {
+    const b = L.DomUtil.create('button', 'fit-btn');
+    b.innerHTML = '🔍 顯示全部照片'; b.title = '縮放到所有照片';
+    L.DomEvent.on(b, 'click', L.DomEvent.stop).on(b, 'click', fitAll);
+    return b;
+  }
+});
+new FitCtl({ position: 'topleft' }).addTo(map);
+function fitAll() { if (cluster.getLayers().length) map.fitBounds(cluster.getBounds().pad(0.2), { maxZoom: 16 }); }
+
+let mini = null, miniMarker = null;
+
+const ORI_CYCLE = [1, 6, 3, 8];
+const ORI_DEG = { 1: 0, 6: 90, 3: 180, 8: 270 };
+const nextOri = o => ORI_CYCLE[(ORI_CYCLE.indexOf(ORI_CYCLE.includes(o) ? o : 1) + 1) % 4];
+
+// ===== IndexedDB persistence =====
+let db = null;
+function openDB() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('mappin', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('photos', { keyPath: 'id' });
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+function dstore(mode) { return db.transaction('photos', mode).objectStore('photos'); }
+function toRec(p) {
+  return { id: p.id, blob: p.file, name: p.name, lat: p.lat, lng: p.lng, alt: p.alt,
+    date: p.date ? p.date.getTime() : null, ori: p.ori, make: p.make, model: p.model,
+    w: p.w, h: p.h, fnum: p.fnum, exp: p.exp, iso: p.iso, focal: p.focal, lens: p.lens,
+    checked: p.checked, hasGPS: p.hasGPS };
+}
+function persist(p) { if (db) try { dstore('readwrite').put(toRec(p)); } catch (_) {} }
+function unpersist(id) { if (db) try { dstore('readwrite').delete(id); } catch (_) {} }
+function recToPhoto(r) {
+  return { id: r.id, file: r.blob, name: r.name, size: r.blob.size, url: URL.createObjectURL(r.blob),
+    lat: r.lat, lng: r.lng, alt: r.alt, date: r.date ? new Date(r.date) : null, ori: r.ori,
+    make: r.make, model: r.model, w: r.w, h: r.h, fnum: r.fnum, exp: r.exp, iso: r.iso,
+    focal: r.focal, lens: r.lens, marker: null, checked: r.checked !== false, hasGPS: r.hasGPS };
+}
+
+// ===== upload (label opens picker natively — no manual click) =====
+const fileInput = document.getElementById('file');
+const drop = document.getElementById('drop');
+fileInput.addEventListener('change', e => { handleFiles(e.target.files); fileInput.value = ''; });
+['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); }));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+drop.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
+
+async function handleFiles(fileList) {
+  const arr = Array.from(fileList);
+  for (const file of arr) {
+    if (!/jpe?g$/i.test(file.name) && file.type !== 'image/jpeg') continue;
+    let ex = {};
+    try { ex = await exifr.parse(file, true) || {}; } catch (_) {}
+    const p = {
+      id: ++uid, file, name: file.name, size: file.size, url: URL.createObjectURL(file),
+      lat: typeof ex.latitude === 'number' ? ex.latitude : null,
+      lng: typeof ex.longitude === 'number' ? ex.longitude : null,
+      alt: typeof ex.GPSAltitude === 'number' ? ex.GPSAltitude : null,
+      date: ex.DateTimeOriginal instanceof Date ? ex.DateTimeOriginal : null,
+      ori: ORI_DEG[ex.Orientation] !== undefined ? ex.Orientation : 1,
+      make: ex.Make, model: ex.Model,
+      w: ex.ExifImageWidth || ex.ImageWidth || ex.PixelXDimension,
+      h: ex.ExifImageHeight || ex.ImageHeight || ex.PixelYDimension,
+      fnum: ex.FNumber, exp: ex.ExposureTime, iso: ex.ISO, focal: ex.FocalLength, lens: ex.LensModel,
+      marker: null, checked: true
+    };
+    p.hasGPS = p.lat !== null && p.lng !== null;
+    photos.push(p);
+    if (p.hasGPS) addMarker(p);
+    persist(p);
+  }
+  render();
+}
+
+// ===== markers =====
+function markerHtml(p) {
+  const sel = p.id === selId ? ' sel' : '';
+  return `<div class="pin${sel}"><img class="pin-img" src="${p.url}" style="transform:rotate(${ORI_DEG[p.ori]}deg);image-orientation:none"><div class="pin-tip"></div></div>`;
+}
+function makeIcon(p) { return L.divIcon({ html: markerHtml(p), className: '', iconSize: [54, 64], iconAnchor: [27, 62] }); }
+function addMarker(p) {
+  if (p.marker) { cluster.removeLayer(p.marker); p.marker = null; }
+  p.marker = L.marker([p.lat, p.lng], { icon: makeIcon(p) });
+  p.marker.on('click', () => requestSelect(p, {}));
+  if (p.id === selId) p.marker.setZIndexOffset(1000);
+  cluster.addLayer(p.marker);
+}
+function refreshIcon(p) { if (p.marker) p.marker.setIcon(makeIcon(p)); }
+function setSelected(id) {
+  const prev = selId; selId = id;
+  if (prev != null && prev !== id) { const pp = photos.find(x => x.id === prev); if (pp) { refreshIcon(pp); if (pp.marker) pp.marker.setZIndexOffset(0); } }
+  if (id != null) { const np = photos.find(x => x.id === id); if (np) { refreshIcon(np); if (np.marker) np.marker.setZIndexOffset(1000); } }
+}
+
+// ===== list =====
+const listEl = document.getElementById('list');
+function activePid() { return panel.classList.contains('hidden') ? null : +panel.dataset.pid; }
+function render() {
+  if (!photos.length) { listEl.innerHTML = '<div class="empty">尚無照片</div>'; updateButtons(); return; }
+  listEl.innerHTML = '';
+  const act = activePid();
+  for (const p of photos) {
+    const row = document.createElement('div');
+    row.className = 'row' + (p.hasGPS ? '' : ' nogps') + (act === p.id ? ' active' : '');
+    if (!p.hasGPS) { row.draggable = true; row.addEventListener('dragstart', e => e.dataTransfer.setData('text/plain', p.id)); }
+    const stat = p.hasGPS ? `<span>${fmtSize(p.size)}${p.date ? ' · ' + fmtDateTime(p.date) : ''}</span>` : `<span class="w">手動拖到地圖自定座標</span>`;
+    row.innerHTML =
+      `<input type="checkbox" ${p.checked ? 'checked' : ''}>` +
+      `<img class="thumb" src="${p.url}" style="transform:rotate(${ORI_DEG[p.ori]}deg);image-orientation:none">` +
+      `<div class="name"><b>${esc(p.name)}</b>${stat}</div>` +
+      `<button class="x" title="移除">✕</button>`;
+    row.querySelector('input').addEventListener('change', e => { p.checked = e.target.checked; persist(p); updateButtons(); });
+    const open = () => requestSelect(p, { pan: true });
+    row.querySelector('.thumb').addEventListener('click', open);
+    row.querySelector('.name').addEventListener('click', open);
+    row.querySelector('.x').addEventListener('click', () => removePhoto(p.id));
+    listEl.appendChild(row);
+  }
+  updateButtons();
+}
+function updateButtons() {
+  const n = photos.filter(p => p.checked).length;
+  const pack = document.getElementById('pack');
+  pack.textContent = `📦 打包下載 (${n})`;
+  pack.disabled = n === 0;
+  document.getElementById('csv').disabled = n === 0;
+  document.getElementById('removeSel').disabled = n === 0;
+}
+document.getElementById('selAll').addEventListener('click', () => { photos.forEach(p => { p.checked = true; persist(p); }); render(); });
+document.getElementById('selNone').addEventListener('click', () => { photos.forEach(p => { p.checked = false; persist(p); }); render(); });
+
+function removePhoto(id) {
+  const i = photos.findIndex(p => p.id === id);
+  if (i < 0) return;
+  const p = photos[i];
+  if (p.marker) cluster.removeLayer(p.marker);
+  URL.revokeObjectURL(p.url);
+  photos.splice(i, 1);
+  unpersist(id);
+  if (selId === id) selId = null;
+  if (activePid() === id) closePanel();
+  render();
+}
+document.getElementById('removeSel').addEventListener('click', () => {
+  const sel = photos.filter(p => p.checked);
+  if (!sel.length) return;
+  if (!confirm(`確定要移除選擇的 ${sel.length} 張照片嗎？此動作無法復原。`)) return;
+  for (const p of sel.slice()) removePhoto(p.id);
+});
+
+// ===== drag photo onto big map =====
+const mapEl = document.getElementById('map');
+mapEl.addEventListener('dragover', e => e.preventDefault());
+mapEl.addEventListener('drop', e => {
+  e.preventDefault();
+  const id = +e.dataTransfer.getData('text/plain');
+  const p = photos.find(x => x.id === id);
+  if (!p) return;
+  const ll = map.mouseEventToLatLng(e);
+  p.lat = +ll.lat.toFixed(6); p.lng = +ll.lng.toFixed(6); p.hasGPS = true;
+  addMarker(p); persist(p); render(); requestSelect(p, {});
+});
+
+// ===== lightbox (open from edit-panel image; close on any click / Esc) =====
+const lightbox = document.getElementById('lightbox');
+const lbImg = document.getElementById('lbImg');
+function openLightbox(p) {
+  lbImg.src = p.url;
+  lbImg.style.transform = `rotate(${ORI_DEG[p.ori]}deg)`;
+  lbImg.style.imageOrientation = 'none';
+  lightbox.classList.remove('hidden');
+}
+function closeLightbox() { lightbox.classList.add('hidden'); lbImg.src = ''; }
+lightbox.addEventListener('click', closeLightbox);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !lightbox.classList.contains('hidden')) closeLightbox(); });
+
+// ===== unsaved-change guard =====
+const dlg = document.getElementById('dlg');
+function confirmSave() {
+  return new Promise(res => {
+    dlg.classList.remove('hidden');
+    document.getElementById('dlgSave').onclick = () => { dlg.classList.add('hidden'); res('save'); };
+    document.getElementById('dlgDiscard').onclick = () => { dlg.classList.add('hidden'); res('discard'); };
+    document.getElementById('dlgCancel').onclick = () => { dlg.classList.add('hidden'); res('cancel'); };
+  });
+}
+async function requestSelect(p, opts) {
+  const cur = activePid();
+  if (cur !== null && cur !== p.id && dirty) {
+    const r = await confirmSave();
+    if (r === 'cancel') return;
+    if (r === 'save') doSave();
+  }
+  openPanel(p);
+  if (opts.pan && p.hasGPS) map.setView([p.lat, p.lng], Math.max(map.getZoom(), 15));
+}
+
+// ===== edit panel =====
+const panel = document.getElementById('panel');
+const FIELD_KEYS = { fName: 'name', fDate: 'date', fLat: 'lat', fLng: 'lng', fAlt: 'alt' };
+function setDirty(v) {
+  dirty = v;
+  document.getElementById('save').classList.toggle('dirty', v);
+  document.getElementById('dirtyFlag').style.display = v ? 'inline' : 'none';
+}
+function refreshFieldHighlight() {
+  for (const id in FIELD_KEYS) {
+    const el = document.getElementById(id);
+    el.classList.toggle('changed', String(el.value) !== String(origVals[id]));
+  }
+  const anyField = Object.keys(FIELD_KEYS).some(id => document.getElementById(id).classList.contains('changed'));
+  setDirty(anyField || oriChanged);
+}
+function captureOrig(p) {
+  origVals = { fName: p.name, fDate: toLocalInput(p.date), fLat: p.lat ?? '', fLng: p.lng ?? '', fAlt: p.alt ?? '' };
+}
+function openPanel(p) {
+  panel.classList.remove('hidden');
+  const img = document.getElementById('pvImg');
+  img.src = p.url; img.style.transform = `rotate(${ORI_DEG[p.ori]}deg)`; img.style.imageOrientation = 'none';
+  document.getElementById('fName').value = p.name;
+  document.getElementById('fDate').value = toLocalInput(p.date);
+  document.getElementById('fLat').value = p.lat ?? '';
+  document.getElementById('fLng').value = p.lng ?? '';
+  document.getElementById('fAlt').value = p.alt ?? '';
+  document.getElementById('tags').innerHTML = buildTags(p);
+  panel.dataset.pid = p.id;
+  captureOrig(p); oriChanged = false; refreshFieldHighlight();
+  setSelected(p.id);
+  setupMini(p);
+  render();
+}
+function closePanel() { panel.classList.add('hidden'); panel.dataset.pid = ''; setSelected(null); setDirty(false); render(); }
+document.getElementById('closePanel').addEventListener('click', closePanel);
+
+Object.keys(FIELD_KEYS).forEach(id => document.getElementById(id).addEventListener('input', refreshFieldHighlight));
+document.getElementById('pvImg').addEventListener('click', () => { const p = photos.find(x => x.id === +panel.dataset.pid); if (p) openLightbox(p); });
+
+document.getElementById('rotate').addEventListener('click', () => {
+  const p = photos.find(x => x.id === +panel.dataset.pid); if (!p) return;
+  p.ori = nextOri(p.ori);
+  document.getElementById('pvImg').style.transform = `rotate(${ORI_DEG[p.ori]}deg)`;
+  oriChanged = true; refreshFieldHighlight();
+});
+
+function doSave() {
+  const p = photos.find(x => x.id === +panel.dataset.pid); if (!p) return;
+  let nm = document.getElementById('fName').value.trim() || p.name;
+  if (!/\.jpe?g$/i.test(nm)) nm += '.jpg';
+  p.name = nm; document.getElementById('fName').value = nm;
+  const dv = document.getElementById('fDate').value;
+  p.date = dv ? new Date(dv) : p.date;
+  const la = parseFloat(document.getElementById('fLat').value);
+  const lo = parseFloat(document.getElementById('fLng').value);
+  const al = parseFloat(document.getElementById('fAlt').value);
+  p.alt = isNaN(al) ? null : al;
+  if (!isNaN(la) && !isNaN(lo)) { p.lat = la; p.lng = lo; p.hasGPS = true; addMarker(p); }
+  document.getElementById('tags').innerHTML = buildTags(p);
+  persist(p);
+  captureOrig(p); oriChanged = false; refreshFieldHighlight();
+  render();
+}
+document.getElementById('save').addEventListener('click', () => { doSave(); flash(document.getElementById('save'), '已儲存 ✓'); });
+
+function buildTags(p) {
+  const t = [fmtSize(p.size)];
+  if (p.make || p.model) t.push([p.make, p.model].filter(Boolean).join(' '));
+  if (p.w && p.h) t.push(`${p.w} × ${p.h}`);
+  if (p.fnum) t.push('f/' + p.fnum);
+  if (p.exp) t.push(fmtExp(p.exp));
+  if (p.iso) t.push('ISO ' + p.iso);
+  if (p.focal) t.push(Math.round(p.focal * 10) / 10 + ' mm');
+  if (p.lens) t.push(p.lens);
+  return t.map(x => `<span class="tag">${esc(x)}</span>`).join('');
+}
+
+// ===== mini map =====
+function setupMini(p) {
+  if (!mini) {
+    mini = L.map('minimap').setView([p.lat || 23.97, p.lng || 120.97], p.hasGPS ? 14 : 7);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(mini);
+    mini.on('click', e => {
+      document.getElementById('fLat').value = +e.latlng.lat.toFixed(6);
+      document.getElementById('fLng').value = +e.latlng.lng.toFixed(6);
+      placeMini(e.latlng.lat, e.latlng.lng);
+      refreshFieldHighlight();
+    });
+  }
+  setTimeout(() => mini.invalidateSize(), 60);
+  if (p.hasGPS) { mini.setView([p.lat, p.lng], 14); placeMini(p.lat, p.lng); }
+  else if (miniMarker) { mini.removeLayer(miniMarker); miniMarker = null; }
+}
+function placeMini(lat, lng) {
+  if (miniMarker) miniMarker.setLatLng([lat, lng]);
+  else miniMarker = L.marker([lat, lng]).addTo(mini);
+}
+
+// ===== CSV export =====
+document.getElementById('csv').addEventListener('click', () => {
+  const sel = photos.filter(p => p.checked);
+  if (!sel.length) return;
+  const rows = [['檔名', '拍攝日期時間', '緯度', '經度', '海拔']];
+  for (const p of sel) rows.push([p.name, p.date ? fmtDateTime(p.date) : '', p.lat ?? '', p.lng ?? '', p.alt ?? '']);
+  const csv = rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+  saveBlob(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }), 'mappin.csv');
+});
+function csvCell(v) { v = String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+
+// ===== pack & download =====
+document.getElementById('pack').addEventListener('click', async () => {
+  const sel = photos.filter(p => p.checked);
+  if (!sel.length) return;
+  const btn = document.getElementById('pack');
+  btn.disabled = true; const orig = btn.textContent;
+  const zip = new JSZip(), used = {};
+  for (let i = 0; i < sel.length; i++) {
+    btn.textContent = `處理中 ${i + 1}/${sel.length}…`;
+    const blob = await buildJpeg(sel[i]);
+    let nm = sel[i].name;
+    if (used[nm]) nm = nm.replace(/(\.\w+)$/, `_${used[nm]}$1`);
+    used[sel[i].name] = (used[sel[i].name] || 0) + 1;
+    zip.file(nm, blob);
+  }
+  btn.textContent = '壓縮中…';
+  const out = await zip.generateAsync({ type: 'blob' });
+  saveBlob(out, 'mappin_photos.zip');
+  btn.textContent = orig; btn.disabled = false;
+});
+
+async function buildJpeg(p) {
+  const dataUrl = await readDataURL(p.file);
+  const binary = atob(dataUrl.split(',')[1]);
+  let ex; try { ex = piexif.load(binary); } catch (_) { ex = { '0th': {}, 'Exif': {}, 'GPS': {} }; }
+  ex['0th'] = ex['0th'] || {}; ex['Exif'] = ex['Exif'] || {}; ex['GPS'] = ex['GPS'] || {};
+  ex['0th'][piexif.ImageIFD.Orientation] = p.ori;
+  if (p.hasGPS) {
+    ex['GPS'][piexif.GPSIFD.GPSLatitudeRef] = p.lat >= 0 ? 'N' : 'S';
+    ex['GPS'][piexif.GPSIFD.GPSLatitude] = piexif.GPSHelper.degToDmsRational(Math.abs(p.lat));
+    ex['GPS'][piexif.GPSIFD.GPSLongitudeRef] = p.lng >= 0 ? 'E' : 'W';
+    ex['GPS'][piexif.GPSIFD.GPSLongitude] = piexif.GPSHelper.degToDmsRational(Math.abs(p.lng));
+    if (p.alt != null && !isNaN(p.alt)) {
+      ex['GPS'][piexif.GPSIFD.GPSAltitudeRef] = p.alt < 0 ? 1 : 0;
+      ex['GPS'][piexif.GPSIFD.GPSAltitude] = [Math.round(Math.abs(p.alt) * 100), 100];
+    }
+  }
+  if (p.date instanceof Date && !isNaN(p.date)) {
+    const ds = fmtExifDate(p.date);
+    ex['Exif'][piexif.ExifIFD.DateTimeOriginal] = ds;
+    ex['Exif'][piexif.ExifIFD.DateTimeDigitized] = ds;
+    ex['0th'][piexif.ImageIFD.DateTime] = ds;
+  }
+  let newBin;
+  try { newBin = piexif.insert(piexif.dump(ex), binary); } catch (_) { newBin = binary; }
+  const u8 = new Uint8Array(newBin.length);
+  for (let i = 0; i < newBin.length; i++) u8[i] = newBin.charCodeAt(i) & 0xff;
+  return new Blob([u8], { type: 'image/jpeg' });
+}
+
+// ===== utils =====
+function fmtSize(b) { return b < 1048576 ? (b / 1024).toFixed(0) + ' KB' : (b / 1048576).toFixed(1) + ' MB'; }
+function fmtExp(e) { return e >= 1 ? e + ' s' : '1/' + Math.round(1 / e) + ' s'; }
+function pad(n) { return String(n).padStart(2, '0'); }
+function fmtDateTime(d) { return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
+function fmtExifDate(d) { return `${d.getFullYear()}:${pad(d.getMonth()+1)}:${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
+function toLocalInput(d) { if (!(d instanceof Date) || isNaN(d)) return ''; return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
+function readDataURL(file) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); }); }
+function saveBlob(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
+function flash(el, msg) { const o = el.textContent; el.textContent = msg; setTimeout(() => el.textContent = o, 1200); }
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+// ===== restore on load =====
+openDB().then(d => {
+  db = d;
+  const req = dstore('readonly').getAll();
+  req.onsuccess = () => {
+    const recs = req.result.sort((a, b) => a.id - b.id);
+    for (const r of recs) {
+      const p = recToPhoto(r);
+      photos.push(p);
+      uid = Math.max(uid, p.id);
+      if (p.hasGPS) addMarker(p);
+    }
+    render();
+    if (cluster.getLayers().length) map.fitBounds(cluster.getBounds().pad(0.2));
+  };
+}).catch(() => {});
+</script>
+</body>
+</html>
