@@ -65,6 +65,17 @@
   .row .name span.w { color:var(--warn); }
   .x { cursor:pointer; color:var(--hint); border:none; background:none; font-size:16px; line-height:1; padding:2px; }
   .x:hover { color:var(--danger); }
+  .pinbtn { cursor:pointer; border:1px solid var(--bd2); background:#fff; border-radius:14px; font-size:13px; line-height:1; padding:5px 8px; flex:none; }
+  .pinbtn:hover { background:rgba(26,115,232,.08); border-color:var(--md-primary); }
+  /* place-on-tap banner, sits over the top of the map */
+  .map-shell { position:relative; }
+  #placing-bar { position:absolute; top:8px; left:8px; right:8px; z-index:900; display:flex; align-items:center; gap:10px;
+                 background:var(--md-primary); color:#fff; border-radius:var(--radius); padding:10px 12px;
+                 font-size:13px; box-shadow:var(--md-shadow-2); }
+  #placing-text { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #placing-cancel { flex:none; border:1px solid rgba(255,255,255,.6); background:transparent; color:#fff;
+                    border-radius:14px; padding:5px 12px; font-family:inherit; font-size:12px; font-weight:500; cursor:pointer; }
+  #placing-cancel:hover { background:rgba(255,255,255,.15); }
   button.btn { width:100%; height:36px; border:1px solid var(--bd2); border-radius:18px; background:#fff; color:var(--md-primary); cursor:pointer; font-family:inherit; font-size:13px; font-weight:500; transition:background .15s ease; }
   button.btn:hover { background:rgba(26,115,232,.08); }
   button.btn.danger { color:var(--danger); border-color:var(--bd2); }
@@ -118,6 +129,43 @@
   .dlg-btns button { flex:1; padding:8px; border-radius:6px; font-size:13px; cursor:pointer; border:1px solid var(--bd2); background:#fff; }
   #dlgSave { background:var(--info); border-color:var(--info); color:#fff; }
   #dlgDiscard { color:var(--danger); border-color:#e0b4b4; }
+
+  /* ── Mobile ─────────────────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    /* App bar: icon-only actions so the title keeps its room */
+    .app-bar { height:56px; padding:0 8px 0 12px; gap:8px; }
+    .app-bar-title { font-size:15px; }
+    .app-bar-logo { width:26px; height:26px; }
+    .app-bar-actions { gap:0; }
+    .md-btn { font-size:0; gap:0; padding:0; width:44px; height:44px; justify-content:center; }
+    .md-btn svg { width:22px; height:22px; }
+    .visit-chip { display:none; }
+
+    /* Single column: sidebar above, map below */
+    .wrap { grid-template-columns:1fr; gap:8px; padding:8px; }
+    #map { height:52vh; min-height:300px; }
+    .list { max-height:34vh; }
+
+    /* Touch targets */
+    .row { padding:8px 4px; gap:9px; }
+    .thumb { width:44px; height:44px; }
+    .row .name { font-size:13px; }
+    .x { font-size:22px; padding:8px; }
+    .pinbtn { font-size:16px; padding:10px 12px; }
+    .selrow button { min-height:44px; font-size:13px; }
+    button.btn { height:44px; font-size:14px; }
+    .drop { padding:18px 12px; }
+    .drop .t { font-size:15px; }
+
+    /* Edit panel: stack the three columns */
+    .pgrid { grid-template-columns:1fr; gap:12px; }
+    .preview { height:200px; }
+    .fields { grid-template-columns:1fr 1fr; }
+    .fld input { padding:10px 8px; font-size:16px; }  /* 16px stops iOS auto-zoom */
+    .minimap { height:220px; }
+    .savebtn { height:44px; font-size:14px; }
+    .rotbtn { padding:11px; font-size:13px; }
+  }
 </style>
 </head>
 <body>
@@ -160,7 +208,13 @@
     <button class="btn danger" id="removeSel" disabled>🗑 移除選擇照片</button>
   </div>
 
-  <div id="map"></div>
+  <div class="map-shell">
+    <div id="placing-bar" hidden>
+      <span id="placing-text"></span>
+      <button id="placing-cancel">取消</button>
+    </div>
+    <div id="map"></div>
+  </div>
 
   <div class="panel hidden" id="panel">
     <div class="head">
@@ -218,6 +272,8 @@
 <script>
 const photos = [];
 let uid = 0, dirty = false, selId = null, oriChanged = false, origVals = {};
+// id of the photo waiting to be placed by tapping the map (null = not placing)
+let placingId = null;
 
 // ===== visit counter (total page views, fresh key, 8-digit) =====
 const COUNTER_URL = 'https://abacus.jasoncameron.dev/hit/mappin-awen-9/live-visits';
@@ -240,8 +296,40 @@ L.control.layers({ '標準地圖': baseOSM, '衛星空照': baseSat, '地形圖'
 const cluster = L.markerClusterGroup({ maxClusterRadius: 45, showCoverageOnHover: false, spiderfyOnMaxZoom: true });
 map.addLayer(cluster);
 
-// click empty map → deselect current pin (and close editor; guard unsaved edits)
-map.on('click', async () => {
+// ===== place-on-tap mode (works on touch; HTML5 drag does not) =====
+// Pick a photo in the list, then tap the map to drop it there.
+const placingBar = document.getElementById('placing-bar');
+const placingText = document.getElementById('placing-text');
+
+function startPlacing(p) {
+  placingId = p.id;
+  placingText.textContent = `點地圖選擇「${p.name}」的位置`;
+  placingBar.hidden = false;
+  map.getContainer().style.cursor = 'crosshair';
+}
+
+function cancelPlacing() {
+  placingId = null;
+  placingBar.hidden = true;
+  map.getContainer().style.cursor = '';
+}
+
+function placeAt(latlng) {
+  const p = photos.find(x => x.id === placingId);
+  cancelPlacing();
+  if (!p) return;
+  p.lat = +latlng.lat.toFixed(6);
+  p.lng = +latlng.lng.toFixed(6);
+  p.hasGPS = true;
+  addMarker(p); persist(p); render(); requestSelect(p, {});
+}
+
+document.getElementById('placing-cancel').addEventListener('click', cancelPlacing);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && placingId != null) cancelPlacing(); });
+
+// click empty map → place pending photo, else deselect current pin
+map.on('click', async e => {
+  if (placingId != null) { placeAt(e.latlng); return; }
   if (activePid() === null && selId === null) return;
   if (dirty) {
     const r = await confirmSave();
@@ -361,13 +449,16 @@ function render() {
     const row = document.createElement('div');
     row.className = 'row' + (p.hasGPS ? '' : ' nogps') + (act === p.id ? ' active' : '');
     if (!p.hasGPS) { row.draggable = true; row.addEventListener('dragstart', e => e.dataTransfer.setData('text/plain', p.id)); }
-    const stat = p.hasGPS ? `<span>${fmtSize(p.size)}${p.date ? ' · ' + fmtDateTime(p.date) : ''}</span>` : `<span class="w">手動拖到地圖自定座標</span>`;
+    const stat = p.hasGPS ? `<span>${fmtSize(p.size)}${p.date ? ' · ' + fmtDateTime(p.date) : ''}</span>` : `<span class="w">尚無座標</span>`;
     row.innerHTML =
       `<input type="checkbox" ${p.checked ? 'checked' : ''}>` +
       `<img class="thumb" src="${p.url}" style="transform:rotate(${ORI_DEG[p.ori]}deg);image-orientation:none">` +
       `<div class="name"><b>${esc(p.name)}</b>${stat}</div>` +
+      (p.hasGPS ? '' : `<button class="pinbtn" title="點地圖設定座標">📍</button>`) +
       `<button class="x" title="移除">✕</button>`;
     row.querySelector('input').addEventListener('change', e => { p.checked = e.target.checked; persist(p); updateButtons(); });
+    const pinBtn = row.querySelector('.pinbtn');
+    if (pinBtn) pinBtn.addEventListener('click', ev => { ev.stopPropagation(); startPlacing(p); });
     const open = () => requestSelect(p, { pan: true });
     row.querySelector('.thumb').addEventListener('click', open);
     row.querySelector('.name').addEventListener('click', open);
