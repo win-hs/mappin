@@ -66,6 +66,11 @@
   .x:hover { color:var(--danger); }
   .pinbtn { cursor:pointer; border:1px solid var(--bd2); background:#fff; border-radius:14px; font-size:13px; line-height:1; padding:5px 8px; flex:none; }
   .pinbtn:hover { background:rgba(26,115,232,.08); border-color:var(--md-primary); }
+  /* An author-level display value beats the UA stylesheet's [hidden]{display:none},
+     so every element toggled via the hidden attribute needs this guard. */
+  [hidden] { display:none !important; }
+  #load-note { font-size:12px; line-height:1.5; padding:8px 10px; border-radius:var(--radius);
+               background:var(--warnbg); color:var(--warn); border:1px solid #f0d9a8; }
   /* place-on-tap banner, sits over the top of the map */
   .map-shell { position:relative; }
   #placing-bar { position:absolute; top:8px; left:8px; right:8px; z-index:900; display:flex; align-items:center; gap:10px;
@@ -192,8 +197,12 @@
       <div style="font-size:22px">⬆</div>
       <div class="t">照片上傳</div>
       <small>支援格式 JPG / JPEG · 可複選</small>
-      <input type="file" id="file" accept="image/jpeg" multiple hidden>
+      <!-- image/* not image/jpeg: Android pickers (Google Photos) often show
+           nothing at all under a strict MIME filter. Real filtering is done by
+           sniffing the file's magic bytes in handleFiles(). -->
+      <input type="file" id="file" accept="image/*" multiple hidden>
     </label>
+    <div id="load-note" hidden></div>
 
     <div class="selrow">
       <button id="selAll">全選</button>
@@ -390,10 +399,40 @@ fileInput.addEventListener('change', e => { handleFiles(e.target.files); fileInp
 ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
 drop.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
 
+// Identify a file by its magic bytes. Android pickers (Google Photos on Pixel)
+// often hand back a name with no extension and a blank or generic MIME type,
+// so neither can be trusted for filtering.
+async function sniffType(file) {
+  let b;
+  try { b = new Uint8Array(await file.slice(0, 12).arrayBuffer()); }
+  catch (_) { return 'unknown'; }
+  if (b.length < 12) return 'unknown';
+  if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return 'jpeg';
+  if (String.fromCharCode(b[4], b[5], b[6], b[7]) === 'ftyp') {
+    const brand = String.fromCharCode(b[8], b[9], b[10], b[11]).toLowerCase();
+    if (/hei|mif1|msf1/.test(brand)) return 'heic';
+    if (/avif/.test(brand)) return 'avif';
+  }
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return 'png';
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46) return 'webp';
+  return 'other';
+}
+
+const noteEl = document.getElementById('load-note');
+function showNote(msg) {
+  if (!msg) { noteEl.hidden = true; return; }
+  noteEl.textContent = msg;
+  noteEl.hidden = false;
+}
+
 async function handleFiles(fileList) {
   const arr = Array.from(fileList);
+  const skipped = { heic: 0, avif: 0, png: 0, webp: 0, other: 0, unknown: 0 };
+  let added = 0;
   for (const file of arr) {
-    if (!/jpe?g$/i.test(file.name) && file.type !== 'image/jpeg') continue;
+    const kind = await sniffType(file);
+    if (kind !== 'jpeg') { skipped[kind] = (skipped[kind] || 0) + 1; continue; }
+    added++;
     let ex = {};
     try { ex = await exifr.parse(file, true) || {}; } catch (_) {}
     const p = {
@@ -415,6 +454,23 @@ async function handleFiles(fileList) {
     persist(p);
   }
   render();
+
+  // Never fail silently: say what was skipped and why.
+  const parts = [];
+  if (skipped.heic) parts.push(`${skipped.heic} 張 HEIC`);
+  if (skipped.avif) parts.push(`${skipped.avif} 張 AVIF`);
+  if (skipped.png) parts.push(`${skipped.png} 張 PNG`);
+  if (skipped.webp) parts.push(`${skipped.webp} 張 WebP`);
+  const misc = skipped.other + skipped.unknown;
+  if (misc) parts.push(`${misc} 個非圖片或無法讀取的檔案`);
+
+  if (!parts.length) { showNote(''); return; }
+  let msg = `已略過 ${parts.join('、')}，只支援 JPG。`;
+  if (skipped.heic) {
+    msg += ' 手機請到「設定 → 相機 → 相片格式」改成 JPEG（Pixel 是「相機設定 → 進階 → 相片格式」），或先把照片轉成 JPG。';
+  }
+  if (!added) msg += ' 這次沒有任何照片被載入。';
+  showNote(msg);
 }
 
 // ===== markers =====
