@@ -394,7 +394,14 @@ function recToPhoto(r) {
 // ===== upload (label opens picker natively — no manual click) =====
 const fileInput = document.getElementById('file');
 const drop = document.getElementById('drop');
-fileInput.addEventListener('change', e => { handleFiles(e.target.files); fileInput.value = ''; });
+// Clear the input only AFTER every file has been read. Clearing it while
+// handleFiles is still awaiting releases the picker's content:// handles on
+// Android, which makes the byte reads and EXIF parse fail silently.
+fileInput.addEventListener('change', async e => {
+  const files = Array.from(e.target.files);
+  try { await handleFiles(files); }
+  finally { fileInput.value = ''; }
+});
 ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); }));
 ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
 drop.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
@@ -428,32 +435,43 @@ function showNote(msg) {
 async function handleFiles(fileList) {
   const arr = Array.from(fileList);
   const skipped = { heic: 0, avif: 0, png: 0, webp: 0, other: 0, unknown: 0 };
-  let added = 0;
-  for (const file of arr) {
-    const kind = await sniffType(file);
-    if (kind !== 'jpeg') { skipped[kind] = (skipped[kind] || 0) + 1; continue; }
-    added++;
-    let ex = {};
-    try { ex = await exifr.parse(file, true) || {}; } catch (_) {}
-    const p = {
-      id: ++uid, file, name: file.name, size: file.size, url: URL.createObjectURL(file),
-      lat: typeof ex.latitude === 'number' ? ex.latitude : null,
-      lng: typeof ex.longitude === 'number' ? ex.longitude : null,
-      alt: typeof ex.GPSAltitude === 'number' ? ex.GPSAltitude : null,
-      date: ex.DateTimeOriginal instanceof Date ? ex.DateTimeOriginal : null,
-      ori: ORI_DEG[ex.Orientation] !== undefined ? ex.Orientation : 1,
-      make: ex.Make, model: ex.Model,
-      w: ex.ExifImageWidth || ex.ImageWidth || ex.PixelXDimension,
-      h: ex.ExifImageHeight || ex.ImageHeight || ex.PixelYDimension,
-      fnum: ex.FNumber, exp: ex.ExposureTime, iso: ex.ISO, focal: ex.FocalLength, lens: ex.LensModel,
-      marker: null, checked: true
-    };
-    p.hasGPS = p.lat !== null && p.lng !== null;
-    photos.push(p);
-    if (p.hasGPS) addMarker(p);
-    persist(p);
+  let added = 0, failed = 0, noGps = 0;
+
+  try {
+    for (const file of arr) {
+      // One unreadable file must not abort the whole batch.
+      try {
+        const kind = await sniffType(file);
+        if (kind !== 'jpeg') { skipped[kind] = (skipped[kind] || 0) + 1; continue; }
+        let ex = {};
+        try { ex = await exifr.parse(file, true) || {}; } catch (_) {}
+        const p = {
+          id: ++uid, file, name: file.name, size: file.size, url: URL.createObjectURL(file),
+          lat: typeof ex.latitude === 'number' ? ex.latitude : null,
+          lng: typeof ex.longitude === 'number' ? ex.longitude : null,
+          alt: typeof ex.GPSAltitude === 'number' ? ex.GPSAltitude : null,
+          date: ex.DateTimeOriginal instanceof Date ? ex.DateTimeOriginal : null,
+          ori: ORI_DEG[ex.Orientation] !== undefined ? ex.Orientation : 1,
+          make: ex.Make, model: ex.Model,
+          w: ex.ExifImageWidth || ex.ImageWidth || ex.PixelXDimension,
+          h: ex.ExifImageHeight || ex.ImageHeight || ex.PixelYDimension,
+          fnum: ex.FNumber, exp: ex.ExposureTime, iso: ex.ISO, focal: ex.FocalLength, lens: ex.LensModel,
+          marker: null, checked: true
+        };
+        p.hasGPS = p.lat !== null && p.lng !== null;
+        if (!p.hasGPS) noGps++;
+        photos.push(p);
+        added++;
+        if (p.hasGPS) addMarker(p);
+        try { persist(p); } catch (_) {}
+      } catch (_) {
+        failed++;
+      }
+    }
+  } finally {
+    // Always repaint, even if something above threw.
+    render();
   }
-  render();
 
   // Never fail silently: say what was skipped and why.
   const parts = [];
@@ -461,16 +479,22 @@ async function handleFiles(fileList) {
   if (skipped.avif) parts.push(`${skipped.avif} 張 AVIF`);
   if (skipped.png) parts.push(`${skipped.png} 張 PNG`);
   if (skipped.webp) parts.push(`${skipped.webp} 張 WebP`);
-  const misc = skipped.other + skipped.unknown;
-  if (misc) parts.push(`${misc} 個非圖片或無法讀取的檔案`);
+  const misc = skipped.other + skipped.unknown + failed;
+  if (misc) parts.push(`${misc} 個非 JPG 或無法讀取的檔案`);
 
-  if (!parts.length) { showNote(''); return; }
-  let msg = `已略過 ${parts.join('、')}，只支援 JPG。`;
-  if (skipped.heic) {
-    msg += ' 手機請到「設定 → 相機 → 相片格式」改成 JPEG（Pixel 是「相機設定 → 進階 → 相片格式」），或先把照片轉成 JPG。';
+  const msgs = [];
+  if (parts.length) {
+    let m = `已略過 ${parts.join('、')}，只支援 JPG。`;
+    if (skipped.heic) m += ' 手機可到相機設定把相片格式改成 JPEG，或先轉檔。';
+    if (!added) m += ' 這次沒有任何照片被載入。';
+    msgs.push(m);
   }
-  if (!added) msg += ' 這次沒有任何照片被載入。';
-  showNote(msg);
+  // Android's photo picker strips GPS from the copy it hands to the browser.
+  if (added && noGps === added) {
+    msgs.push('這批照片都沒有座標。手機從「相簿」選取時，系統可能會移除位置資訊；' +
+              '改從「檔案／我的檔案」選同一張通常就讀得到。也可以用清單上的 📍 手動點地圖定位。');
+  }
+  showNote(msgs.join(' '));
 }
 
 // ===== markers =====
