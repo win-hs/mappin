@@ -13,41 +13,45 @@
 <meta property="og:locale" content="zh_TW">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Calistoga&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;700&display=swap">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
 <style>
-  :root { --bd:#E2E8F0; --bd2:#bcbcb4; --muted:#64748B; --hint:#9a9a93; --info:#0052FF; --infobg:#e6f1fb;
-          --warn:#854f0b; --warnbg:#faeeda; --danger:#a32d2d; --dangerbg:#fcebeb; --ok:#0f6e56;
-          --ink:#0F172A; --accent:#0052FF; --accent-2:#4D7CFF; --radius:12px;
-          --gradient:linear-gradient(135deg,var(--accent),var(--accent-2));
-          --shadow-sm:0 1px 3px rgba(0,0,0,.06); --shadow-md:0 4px 10px rgba(0,0,0,.08); --shadow-accent:0 4px 14px rgba(0,82,255,.25);
-          --font-display:"Calistoga",Georgia,serif; --font-sans:"Inter","Microsoft JhengHei",system-ui,sans-serif; --font-mono:"JetBrains Mono",monospace; }
+  /* Google Material Design tokens */
+  :root { --md-primary:#1a73e8; --md-primary-hover:#1765cc; --md-primary-container:#e8f0fe;
+          --md-outline:#dadce0; --md-on-surface:#202124; --md-on-surface-var:#5f6368;
+          --md-surface-1:#f8f9fa; --md-error:#d93025; --md-warn:#e37400;
+          --md-shadow-1:0 1px 2px 0 rgba(60,64,67,.30), 0 1px 3px 1px rgba(60,64,67,.15);
+          --md-shadow-2:0 1px 2px 0 rgba(60,64,67,.30), 0 2px 6px 2px rgba(60,64,67,.15);
+          --bd:#dadce0; --bd2:#dadce0; --muted:#5f6368; --hint:#80868b; --info:#1a73e8; --infobg:#e8f0fe;
+          --warn:#e37400; --warnbg:#fef7e0; --danger:#d93025; --dangerbg:#fce8e6; --ok:#188038;
+          --ink:#202124; --accent:#1a73e8; --radius:8px;
+          --font-sans:Roboto,"Noto Sans TC",Arial,sans-serif; --font-mono:"Roboto Mono",monospace; }
   * { box-sizing:border-box; }
-  body { margin:0; font-family:var(--font-sans); color:var(--ink); background:#f4f3ee; }
+  body { margin:0; font-family:var(--font-sans); color:var(--ink); background:var(--md-surface-1); }
   :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-  header { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:16px 20px; background:var(--ink); position:sticky; top:0; z-index:20; }
-  header h1 { font-family:var(--font-display); font-size:20px; font-weight:400; margin:0; color:#fff; letter-spacing:-0.01em; }
-  .fb-util { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-family:var(--font-sans); }
-  .fb-pill { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:500; color:var(--ink); background:#fff; border:1px solid var(--bd); padding:6px 12px; border-radius:20px; text-decoration:none; box-shadow:var(--shadow-sm); white-space:nowrap; transition:box-shadow .2s ease-out, transform .2s ease-out; }
-  a.fb-pill:hover { box-shadow:var(--shadow-md); transform:translateY(-1px); }
-  .fb-pill-static { color:rgba(255,255,255,.85); background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.18); box-shadow:none; }
-  .fb-pill b { font-variant-numeric:tabular-nums; letter-spacing:.5px; color:#fff; }
-  .fb-dot { width:6px; height:6px; border-radius:50%; background:var(--accent-2); flex:none; }
-  @media (prefers-reduced-motion:no-preference) { .fb-dot { animation:fb-pulse 2s infinite; } }
-  @keyframes fb-pulse { 0%,100% { transform:scale(1); opacity:1; } 50% { transform:scale(1.35); opacity:.6; } }
+  .app-bar { display:flex; align-items:center; justify-content:space-between; gap:16px; height:64px; padding:0 16px 0 24px; background:#fff; border-bottom:1px solid var(--md-outline); position:sticky; top:0; z-index:20; }
+  .app-bar-title { font-size:22px; font-weight:400; margin:0; color:var(--md-on-surface); white-space:nowrap; }
+  .app-bar-actions { display:flex; align-items:center; gap:4px; }
+  .md-btn { display:inline-flex; align-items:center; gap:8px; height:36px; padding:0 12px; border:none; border-radius:18px; background:transparent; color:var(--md-primary); font-family:inherit; font-size:14px; font-weight:500; letter-spacing:.0107142857em; text-decoration:none; white-space:nowrap; cursor:pointer; transition:background-color .15s ease; }
+  .md-btn:hover { background:rgba(26,115,232,.08); }
+  .md-btn:active { background:rgba(26,115,232,.16); }
+  .md-btn svg { width:18px; height:18px; fill:currentColor; flex:none; }
+  .visit-chip { display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 14px; border:1px solid var(--md-outline); border-radius:16px; background:#fff; color:var(--md-on-surface-var); font-size:12px; white-space:nowrap; }
+  .visit-chip b { font-family:var(--font-mono); font-weight:500; font-variant-numeric:tabular-nums; color:var(--md-on-surface); }
+  @media (max-width:720px) { .app-bar { height:auto; padding:8px 12px; flex-wrap:wrap; } .app-bar-title { font-size:18px; } .md-btn { font-size:13px; padding:0 10px; } }
   .wrap { display:grid; grid-template-columns:260px 1fr; gap:10px; padding:10px; }
   .sidebar { display:flex; flex-direction:column; gap:10px; }
-  .drop { border:1.5px dashed var(--bd2); border-radius:var(--radius); padding:14px 10px; text-align:center; background:#fff; cursor:pointer; transition:box-shadow .2s ease-out; }
-  .drop:hover { box-shadow:var(--shadow-sm); }
+  .drop { border:1px dashed var(--bd2); border-radius:var(--radius); padding:14px 10px; text-align:center; background:#fff; cursor:pointer; transition:background .15s ease; }
+  .drop:hover { background:var(--md-surface-1); }
   .drop.drag { background:var(--infobg); border-color:var(--info); }
   .drop .t { font-size:14px; margin-top:2px; }
   .drop small { color:var(--hint); }
   .selrow { display:flex; gap:6px; }
-  .selrow button { flex:1; padding:5px; font-size:12px; border:1px solid var(--bd2); border-radius:8px; background:#fff; cursor:pointer; transition:background .15s; }
-  .selrow button:hover { background:#f0efe9; }
-  .list { background:#fff; border:1px solid var(--bd); border-radius:var(--radius); padding:6px; max-height:44vh; overflow:auto; box-shadow:var(--shadow-sm); }
+  .selrow button { flex:1; padding:6px; font-size:12px; font-family:inherit; font-weight:500; border:1px solid var(--bd2); border-radius:16px; background:#fff; color:var(--md-primary); cursor:pointer; transition:background .15s; }
+  .selrow button:hover { background:rgba(26,115,232,.08); }
+  .list { background:#fff; border:1px solid var(--bd); border-radius:var(--radius); padding:6px; max-height:44vh; overflow:auto; }
   .row { display:flex; align-items:center; gap:7px; padding:5px 4px; border-radius:6px; }
   .row.nogps { background:var(--warnbg); }
   .row.active { outline:2px solid var(--info); }
@@ -59,10 +63,10 @@
   .row .name span.w { color:var(--warn); }
   .x { cursor:pointer; color:var(--hint); border:none; background:none; font-size:16px; line-height:1; padding:2px; }
   .x:hover { color:var(--danger); }
-  button.btn { width:100%; padding:9px; border:1px solid var(--bd2); border-radius:var(--radius); background:#fff; cursor:pointer; font-size:13px; transition:all .2s ease-out; }
-  button.btn:hover { background:#f0efe9; box-shadow:var(--shadow-sm); }
-  button.btn:active { transform:scale(.98); }
-  button.btn.danger { color:var(--danger); border-color:#e0b4b4; }
+  button.btn { width:100%; height:36px; border:1px solid var(--bd2); border-radius:18px; background:#fff; color:var(--md-primary); cursor:pointer; font-family:inherit; font-size:13px; font-weight:500; transition:background .15s ease; }
+  button.btn:hover { background:rgba(26,115,232,.08); }
+  button.btn.danger { color:var(--danger); border-color:var(--bd2); }
+  button.btn.danger:hover { background:rgba(217,48,37,.08); }
   button.btn:disabled { opacity:.5; cursor:default; }
   #map { height:62vh; min-height:380px; border:1px solid var(--bd); border-radius:var(--radius); }
   .fit-btn { background:#fff; border:2px solid rgba(0,0,0,.2); border-radius:5px; padding:5px 9px; font-size:12px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,.25); }
@@ -79,7 +83,7 @@
   .lb img { display:block; max-width:92vw; max-height:90vh; }
   .lb-hint { position:fixed; bottom:14px; left:0; right:0; text-align:center; color:#fff; font-size:13px; opacity:.85; }
   /* edit panel */
-  .panel { grid-column:1 / -1; background:#fff; border:1px solid var(--bd); border-radius:var(--radius); padding:12px; margin:0 10px 10px; box-shadow:var(--shadow-sm); }
+  .panel { grid-column:1 / -1; background:#fff; border:1px solid var(--bd); border-radius:var(--radius); padding:12px; margin:0 10px 10px; }
   .panel.hidden { display:none; }
   .panel .head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
   .panel .head .left { display:flex; align-items:center; gap:10px; }
@@ -89,8 +93,8 @@
   .preview { width:100%; height:150px; border-radius:8px; background:var(--infobg); display:flex; align-items:center; justify-content:center; overflow:hidden; }
   .preview img { max-width:100%; max-height:100%; cursor:zoom-in; }
   .pvhint { font-size:11px; color:var(--hint); text-align:center; margin:4px 0 0; }
-  .rotbtn { margin-top:4px; width:100%; padding:6px; font-size:12px; border:1px solid var(--bd2); border-radius:6px; background:#fff; cursor:pointer; }
-  .rotbtn:hover { background:#f0efe9; }
+  .rotbtn { margin-top:4px; width:100%; padding:7px; font-size:12px; font-family:inherit; font-weight:500; border:1px solid var(--bd2); border-radius:16px; background:#fff; color:var(--md-primary); cursor:pointer; transition:background .15s ease; }
+  .rotbtn:hover { background:rgba(26,115,232,.08); }
   .fields { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
   .fld label { font-size:11px; color:var(--hint); display:block; margin-bottom:2px; }
   .fld input { width:100%; padding:6px 8px; border:1px solid var(--bd2); border-radius:6px; font-size:12px; font-family:inherit; }
@@ -99,9 +103,9 @@
   .tag { font-size:11px; background:#f0efe9; border-radius:6px; padding:4px 8px; color:#444; }
   .minimap { height:200px; border:1px solid var(--bd); border-radius:8px; }
   .mmhint { font-size:11px; color:var(--hint); margin:4px 0 0; }
-  .savebtn { width:100%; margin-top:8px; padding:9px; border:none; border-radius:var(--radius); background:var(--gradient); color:#fff; cursor:pointer; font-size:13px; font-weight:600; box-shadow:var(--shadow-sm); transition:all .2s ease-out; }
-  .savebtn:hover { box-shadow:var(--shadow-accent); transform:translateY(-1px); }
-  .savebtn.dirty { background:var(--danger); border-color:var(--danger); color:#fff; }
+  .savebtn { width:100%; margin-top:8px; height:36px; border:none; border-radius:18px; background:var(--md-primary); color:#fff; cursor:pointer; font-family:inherit; font-size:13px; font-weight:500; transition:background .15s ease, box-shadow .15s ease; }
+  .savebtn:hover { background:var(--md-primary-hover); box-shadow:var(--md-shadow-1); }
+  .savebtn.dirty { background:var(--danger); color:#fff; }
   .empty { color:var(--hint); font-size:12px; text-align:center; padding:14px; }
   /* unsaved dialog */
   .dlg { position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center; z-index:9999; }
@@ -115,13 +119,19 @@
 </style>
 </head>
 <body>
-<header>
-  <h1>Mappin</h1>
-  <div class="fb-util">
-    <a class="fb-pill" href="mailto:a.wen90@gmail.com?subject=Field-Box%20%E5%9B%9E%E5%A0%B1%EF%BC%9AMappin">回報問題</a>
-    <span class="fb-pill fb-pill-static"><span class="fb-dot"></span>總造訪次數 <b id="visits">00000000</b></span>
-    <a class="fb-pill" href="https://sites.google.com/view/fieldbox/homepage">← 返回FieldBox首頁</a>
-  </div>
+<header class="app-bar">
+  <h1 class="app-bar-title">Mappin</h1>
+  <nav class="app-bar-actions">
+    <a class="md-btn" href="https://sites.google.com/view/fieldbox/homepage">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20v-2z"/></svg>
+      返回 Field-Box 首頁
+    </a>
+    <a class="md-btn" href="mailto:a.wen90@gmail.com?subject=Field-Box%20%E5%9B%9E%E5%A0%B1%EF%BC%9AMappin">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z"/></svg>
+      回報問題
+    </a>
+    <span class="visit-chip">總造訪次數<b id="visits">00000000</b></span>
+  </nav>
 </header>
 
 <div class="wrap">
