@@ -409,20 +409,37 @@ drop.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
 // Identify a file by its magic bytes. Android pickers (Google Photos on Pixel)
 // often hand back a name with no extension and a blank or generic MIME type,
 // so neither can be trusted for filtering.
+// Returns { kind, why }; `why` states the reason for every verdict other than
+// 'jpeg', so a skipped file can say what was actually wrong with it.
 async function sniffType(file) {
-  let b;
+  let b = null, abErr = '';
   try { b = new Uint8Array(await file.slice(0, 12).arrayBuffer()); }
-  catch (_) { return 'unknown'; }
-  if (b.length < 12) return 'unknown';
-  if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return 'jpeg';
+  catch (e) { abErr = (e && e.message) || String(e); }
+  // Blob.arrayBuffer is absent on older mobile Safari and can be refused for
+  // Android's content:// handles; FileReader still reads both.
+  if (!b) {
+    try {
+      b = await new Promise((res, rej) => {
+        const fr = new FileReader();
+        fr.onload = () => res(new Uint8Array(fr.result));
+        fr.onerror = () => rej(fr.error || new Error('FileReader 讀取失敗'));
+        fr.readAsArrayBuffer(file.slice(0, 12));
+      });
+    } catch (e) {
+      return { kind: 'unreadable', why: `讀不到檔頭：${abErr || (e && e.message) || e}` };
+    }
+  }
+  if (b.length < 12) return { kind: 'unreadable', why: `檔頭只讀到 ${b.length} 個位元組` };
+  if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return { kind: 'jpeg', why: '' };
   if (String.fromCharCode(b[4], b[5], b[6], b[7]) === 'ftyp') {
     const brand = String.fromCharCode(b[8], b[9], b[10], b[11]).toLowerCase();
-    if (/hei|mif1|msf1/.test(brand)) return 'heic';
-    if (/avif/.test(brand)) return 'avif';
+    if (/hei|mif1|msf1/.test(brand)) return { kind: 'heic', why: '' };
+    if (/avif/.test(brand)) return { kind: 'avif', why: '' };
   }
-  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return 'png';
-  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46) return 'webp';
-  return 'other';
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return { kind: 'png', why: '' };
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46) return { kind: 'webp', why: '' };
+  const hex = Array.from(b.slice(0, 4)).map(n => ('0' + n.toString(16).toUpperCase()).slice(-2)).join(' ');
+  return { kind: 'other', why: `檔頭為 ${hex}` };
 }
 
 const noteEl = document.getElementById('load-note');
@@ -434,15 +451,21 @@ function showNote(msg) {
 
 async function handleFiles(fileList) {
   const arr = Array.from(fileList);
-  const skipped = { heic: 0, avif: 0, png: 0, webp: 0, other: 0, unknown: 0 };
-  let added = 0, failed = 0, noGps = 0;
+  const skipped = { heic: 0, avif: 0, png: 0, webp: 0, other: 0 };
+  const reasons = new Set();
+  let added = 0, failed = 0, noGps = 0, headless = 0;
 
   try {
     for (const file of arr) {
       // One unreadable file must not abort the whole batch.
       try {
-        const kind = await sniffType(file);
-        if (kind !== 'jpeg') { skipped[kind] = (skipped[kind] || 0) + 1; continue; }
+        const { kind, why } = await sniffType(file);
+        if (why) reasons.add(why);
+        // Reject only formats we positively recognise. A header we could not
+        // read is no proof the photo is unusable, and dropping it costs the
+        // user the photo as well as its coordinates.
+        if (kind !== 'jpeg' && kind !== 'unreadable') { skipped[kind]++; continue; }
+        if (kind === 'unreadable') headless++;
         let ex = {};
         try { ex = await exifr.parse(file, true) || {}; } catch (_) {}
         const p = {
@@ -479,8 +502,8 @@ async function handleFiles(fileList) {
   if (skipped.avif) parts.push(`${skipped.avif} 張 AVIF`);
   if (skipped.png) parts.push(`${skipped.png} 張 PNG`);
   if (skipped.webp) parts.push(`${skipped.webp} 張 WebP`);
-  const misc = skipped.other + skipped.unknown + failed;
-  if (misc) parts.push(`${misc} 個非 JPG 或無法讀取的檔案`);
+  if (skipped.other) parts.push(`${skipped.other} 個非圖片檔`);
+  if (failed) parts.push(`${failed} 個讀取時出錯的檔案`);
 
   const msgs = [];
   if (parts.length) {
@@ -489,6 +512,8 @@ async function handleFiles(fileList) {
     if (!added) m += ' 這次沒有任何照片被載入。';
     msgs.push(m);
   }
+  if (headless) msgs.push(`${headless} 張讀不到檔頭，已照常載入，但可能缺座標或縮圖。`);
+  if (reasons.size) msgs.push(`原因：${[...reasons].slice(0, 3).join('；')}。`);
   // Android's photo picker strips GPS from the copy it hands to the browser.
   if (added && noGps === added) {
     msgs.push('這批照片都沒有座標。手機從「相簿」選取時，系統可能會移除位置資訊；' +
