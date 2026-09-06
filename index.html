@@ -432,14 +432,18 @@ async function sniffType(file) {
   if (b.length < 12) return { kind: 'unreadable', why: `檔頭只讀到 ${b.length} 個位元組` };
   if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return { kind: 'jpeg', why: '' };
   if (String.fromCharCode(b[4], b[5], b[6], b[7]) === 'ftyp') {
+    // Apple stamps HEIC with heic/heix/heim/heis and hevc/hevx/hevm/hevs;
+    // matching only /hei/ let the hev* half fall through as "not an image".
     const brand = String.fromCharCode(b[8], b[9], b[10], b[11]).toLowerCase();
-    if (/hei|mif1|msf1/.test(brand)) return { kind: 'heic', why: '' };
-    if (/avif/.test(brand)) return { kind: 'avif', why: '' };
+    if (/hei|hev|mif1|msf1/.test(brand)) return { kind: 'heic', why: '' };
+    if (/avif|avis/.test(brand)) return { kind: 'avif', why: '' };
+    return { kind: 'other', why: `ISO-BMFF 品牌 ${brand}` };
   }
   if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return { kind: 'png', why: '' };
   if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46) return { kind: 'webp', why: '' };
-  const hex = Array.from(b.slice(0, 4)).map(n => ('0' + n.toString(16).toUpperCase()).slice(-2)).join(' ');
-  return { kind: 'other', why: `檔頭為 ${hex}` };
+  const hex = Array.from(b).map(n => ('0' + n.toString(16).toUpperCase()).slice(-2)).join(' ');
+  const asc = Array.from(b).map(n => (n >= 32 && n < 127) ? String.fromCharCode(n) : '.').join('');
+  return { kind: 'other', why: `檔頭 ${hex}（${asc}）` };
 }
 
 const noteEl = document.getElementById('load-note');
