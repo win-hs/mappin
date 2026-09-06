@@ -446,6 +446,21 @@ async function sniffType(file) {
   return { kind: 'other', why: `檔頭 ${hex}（${asc}）` };
 }
 
+// Can the browser actually display this file? Authoritative where a 12-byte
+// header guess is not. Times out rather than hanging the whole batch.
+function canDecode(file) {
+  return new Promise(res => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    let settled = false;
+    const done = ok => { if (settled) return; settled = true; URL.revokeObjectURL(url); res(ok); };
+    img.onload = () => done(img.naturalWidth > 0);
+    img.onerror = () => done(false);
+    setTimeout(() => done(false), 8000);
+    img.src = url;
+  });
+}
+
 const noteEl = document.getElementById('load-note');
 function showNote(msg) {
   if (!msg) { noteEl.hidden = true; return; }
@@ -457,7 +472,7 @@ async function handleFiles(fileList) {
   const arr = Array.from(fileList);
   const skipped = { heic: 0, avif: 0, png: 0, webp: 0, other: 0 };
   const reasons = new Set();
-  let added = 0, failed = 0, noGps = 0, headless = 0;
+  let added = 0, failed = 0, noGps = 0, decoded = 0;
 
   try {
     for (const file of arr) {
@@ -465,11 +480,14 @@ async function handleFiles(fileList) {
       try {
         const { kind, why } = await sniffType(file);
         if (why) reasons.add(why);
-        // Reject only formats we positively recognise. A header we could not
-        // read is no proof the photo is unusable, and dropping it costs the
-        // user the photo as well as its coordinates.
-        if (kind !== 'jpeg' && kind !== 'unreadable') { skipped[kind]++; continue; }
-        if (kind === 'unreadable') headless++;
+        if (kind === 'heic' || kind === 'avif' || kind === 'png' || kind === 'webp') { skipped[kind]++; continue; }
+        // The header only advises. When it cannot name the format, let the
+        // browser rule on the file instead of discarding a photo on a 12-byte
+        // guess -- that guess has already cost this user their photos twice.
+        if (kind !== 'jpeg') {
+          if (!(await canDecode(file))) { skipped.other++; continue; }
+          decoded++;
+        }
         let ex = {};
         try { ex = await exifr.parse(file, true) || {}; } catch (_) {}
         const p = {
@@ -516,7 +534,7 @@ async function handleFiles(fileList) {
     if (!added) m += ' 這次沒有任何照片被載入。';
     msgs.push(m);
   }
-  if (headless) msgs.push(`${headless} 張讀不到檔頭，已照常載入，但可能缺座標或縮圖。`);
+  if (decoded) msgs.push(`${decoded} 張的檔頭認不出來，但瀏覽器解得開，已照常載入。`);
   if (reasons.size) msgs.push(`原因：${[...reasons].slice(0, 3).join('；')}。`);
   // Android's photo picker strips GPS from the copy it hands to the browser.
   if (added && noGps === added) {
